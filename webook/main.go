@@ -11,6 +11,7 @@ import (
 	"my_geek_go/webook/internal/repository/dao"
 	"my_geek_go/webook/internal/service"
 	"my_geek_go/webook/internal/web"
+	"my_geek_go/webook/internal/web/middleware"
 	"strings"
 	"time"
 )
@@ -43,6 +44,7 @@ func initWebServer() *gin.Engine {
 
 	store := cookie.NewStore([]byte("secret"))
 	server.Use(sessions.Sessions("mysession", store))
+	server.Use(middleware.NewLoginMiddlewareBuilder().Build())
 
 	return server
 }
