@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"golang.org/x/crypto/bcrypt"
-	"my_geek_go/webook/internal/domain"
-	"my_geek_go/webook/internal/repository"
+	"webook/webook/internal/domain"
+	"webook/webook/internal/repository"
 )
 
 var ErrUserDuplicateEmail = repository.ErrUserDuplicateEmail

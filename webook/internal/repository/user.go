@@ -2,8 +2,8 @@ package repository
 
 import (
 	"context"
-	"my_geek_go/webook/internal/domain"
-	"my_geek_go/webook/internal/repository/dao"
+	"webook/webook/internal/domain"
+	"webook/webook/internal/repository/dao"
 )
 
 var (

@@ -5,9 +5,11 @@ import (
 	regexp "github.com/dlclark/regexp2"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
-	"my_geek_go/webook/internal/domain"
-	"my_geek_go/webook/internal/service"
+	jwt "github.com/golang-jwt/jwt/v5"
 	"net/http"
+	"time"
+	"webook/webook/internal/domain"
+	"webook/webook/internal/service"
 )
 
 const (
@@ -15,6 +17,8 @@ const (
 	// 和上面比起来，用 ` 看起来就比较清爽
 	passwordRegexPattern = `^(?=.*[A-Za-z])(?=.*\d)(?=.*[$@$!%*#?&])[A-Za-z\d$@$!%*#?&]{8,}$`
 )
+
+var JWTKey = []byte("b0P9mUJMwvPlB3rwNwi2FZYF8jS6Yl2W")
 
 type UserHandler struct {
 	svc            *service.UserService
@@ -43,11 +47,12 @@ func (u *UserHandler) RegisterRoutes(server *gin.Engine) {
 	// POST /users/signup
 	ug.POST("/signup", u.SignUp)
 	// POST /users/login
-	ug.POST("/login", u.Login)
+	ug.POST("/login", u.LoginJWT)
 	// POST /users/edit
 	ug.POST("/edit", u.Edit)
 	// GET /users/profile
-	ug.GET("/profile", u.Profile)
+	ug.GET("/profile", u.ProfileJWT)
+
 }
 
 func (u *UserHandler) SignUp(ctx *gin.Context) {
@@ -108,6 +113,52 @@ func (u *UserHandler) SignUp(ctx *gin.Context) {
 	fmt.Printf("%v", req)
 }
 
+func (u *UserHandler) LoginJWT(ctx *gin.Context) {
+	type loginReq struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	var req loginReq
+	if err := ctx.Bind(&req); err != nil {
+		return
+	}
+
+	user, err := u.svc.Login(ctx, req.Email, req.Password)
+	if err == service.ErrInvalidUserOrPassword {
+		ctx.String(http.StatusOK, "wrong email or password")
+		return
+	}
+	if err != nil {
+		ctx.String(http.StatusOK, "system error")
+		return
+	}
+
+	fmt.Printf("%v", user)
+
+	//Generate a JWT
+	claim := UserClaim{
+		UserId: user.Id,
+		RegisteredClaims: jwt.RegisteredClaims{
+			// 1 hour过期
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+		UserAgent: ctx.Request.UserAgent(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS512, claim)
+	tokenStr, err := token.SignedString(JWTKey)
+
+	if err != nil {
+		ctx.String(http.StatusInternalServerError, "system error")
+		return
+	}
+	ctx.Header("x-jwt-token", tokenStr)
+	ctx.String(http.StatusOK, "Login Success")
+
+	return
+}
+
 func (u *UserHandler) Login(ctx *gin.Context) {
 	type loginReq struct {
 		Email    string `json:"email"`
@@ -132,8 +183,32 @@ func (u *UserHandler) Login(ctx *gin.Context) {
 	// Login success and set session
 	sess := sessions.Default(ctx)
 	sess.Set("userId", user.Id)
-	sess.Save()
+	sess.Options(sessions.Options{
+		// second
+		MaxAge: 10 * 60, //60 * 60,
+	})
+	err = sess.Save()
+	if err != nil {
+		// 打日志
+		fmt.Println(err)
+	}
 	ctx.String(http.StatusOK, "Login Success")
+
+	return
+}
+
+func (u *UserHandler) Logout(ctx *gin.Context) {
+	sess := sessions.Default(ctx)
+	sess.Options(sessions.Options{
+		MaxAge: -1,
+	})
+	err := sess.Save()
+	if err != nil {
+		// 打日志
+		fmt.Println(err)
+	}
+
+	ctx.String(http.StatusOK, "Logout  Success")
 
 	return
 }
@@ -143,6 +218,27 @@ func (u *UserHandler) Edit(ctx *gin.Context) {
 }
 
 func (u *UserHandler) Profile(ctx *gin.Context) {
-
+	sess := sessions.Default(ctx)
+	userID := sess.Get("userId")
+	idInt, _ := userID.(int64)
+	fmt.Printf("userID %v", idInt)
 	ctx.String(http.StatusOK, "This is your profile")
+}
+
+func (u *UserHandler) ProfileJWT(ctx *gin.Context) {
+	claimAny, _ := ctx.Get("userClaim")
+	claims, ok := claimAny.(*UserClaim)
+	if !ok {
+		ctx.String(http.StatusOK, "system error")
+		return
+	}
+
+	println(claims.UserId)
+	ctx.String(http.StatusOK, "This is your profile")
+}
+
+type UserClaim struct {
+	jwt.RegisteredClaims
+	UserId    int64
+	UserAgent string
 }
